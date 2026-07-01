@@ -1,8 +1,9 @@
 # app.py
-
+import pandas as pd
 import streamlit as st
 from modules.loader import load_file
 from modules.cleaner import clean_data
+from modules.metrics import compute_metrics
 
 st.set_page_config(
     page_title="Student Analytics Dashboard",
@@ -10,22 +11,26 @@ st.set_page_config(
     layout="wide"
 )
 
-# ── Session state ─────────────────────────────────────────────────────────────
+# ── Session state ──────────────────────────────────────────────────────────────
 if "df_raw" not in st.session_state:
     st.session_state.df_raw = None
 if "df_clean" not in st.session_state:
     st.session_state.df_clean = None
 if "clean_report" not in st.session_state:
     st.session_state.clean_report = None
+if "summary" not in st.session_state:
+    st.session_state.summary = None
+if "class_stats" not in st.session_state:
+    st.session_state.class_stats = None
 
-# ── Header ────────────────────────────────────────────────────────────────────
+# ── Header ─────────────────────────────────────────────────────────────────────
 st.title("📊 Student Analytics Dashboard")
 st.markdown("Upload your student marks data to get instant performance insights.")
 
 st.sidebar.title("Navigation")
 st.sidebar.markdown("**Step 1:** Upload your file below.")
 
-# ── File Upload ───────────────────────────────────────────────────────────────
+# ── File Upload ────────────────────────────────────────────────────────────────
 st.header("📂 Upload Data")
 
 uploaded_file = st.file_uploader(
@@ -41,17 +46,22 @@ if uploaded_file is not None:
         st.error(f"❌ {error}")
     else:
         df_clean, report = clean_data(df_raw)
+        marks_cols = report["marks_columns"]
+        summary, class_stats = compute_metrics(df_clean, marks_cols)
+
         st.session_state.df_raw = df_raw
         st.session_state.df_clean = df_clean
         st.session_state.clean_report = report
-        st.success(f"✅ File uploaded and cleaned: `{uploaded_file.name}`")
+        st.session_state.summary = summary
+        st.session_state.class_stats = class_stats
 
-# ── Cleaning Report ───────────────────────────────────────────────────────────
+        st.success(f"✅ File uploaded, cleaned, and analysed: `{uploaded_file.name}`")
+
+# ── Cleaning Report ────────────────────────────────────────────────────────────
 if st.session_state.clean_report is not None:
     report = st.session_state.clean_report
 
     st.header("🧹 Data Cleaning Report")
-
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Original Rows", report["original_rows"])
     col2.metric("Duplicates Removed", report["duplicates_removed"])
@@ -63,23 +73,34 @@ if st.session_state.clean_report is not None:
         for change in report["columns_renamed"]:
             st.write(f"  - `{change}`")
 
-    st.markdown(f"**Marks columns detected:** `{report['marks_columns']}`")
+# ── Class Overview ─────────────────────────────────────────────────────────────
+if st.session_state.class_stats is not None:
+    stats = st.session_state.class_stats
 
-# ── Data Display ──────────────────────────────────────────────────────────────
-if st.session_state.df_clean is not None:
-    df = st.session_state.df_clean
+    st.header("📈 Class Overview")
 
-    st.header("🗂️ Cleaned Data Preview")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Students", stats["total_students"])
+    col2.metric("Class Average", f"{stats['class_average']}%")
+    col3.metric("Passed", stats["passed"])
+    col4.metric("Failed", stats["failed"])
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Students", df.shape[0])
-    col2.metric("Total Columns", df.shape[1])
-    col3.metric("Subjects Detected", len(st.session_state.clean_report["marks_columns"]))
+    col5, col6, col7 = st.columns(3)
+    col5.metric("Pass Rate", f"{stats['pass_rate']}%")
+    col6.metric("Highest Score", f"{stats['highest_score']}%")
+    col7.metric("Lowest Score", f"{stats['lowest_score']}%")
 
-    st.markdown("**Columns:**")
-    st.write(list(df.columns))
+    st.subheader("Grade Distribution")
+    grade_df = pd.DataFrame(
+        list(stats["grade_distribution"].items()),
+        columns=["Grade", "Count"]
+    ).sort_values("Grade")
+    st.dataframe(grade_df, width='stretch')
 
-    st.dataframe(df, width='stretch')
+# ── Student Summary Table ──────────────────────────────────────────────────────
+if st.session_state.summary is not None:
+    st.header("🎓 Student Performance Summary")
+    st.dataframe(st.session_state.summary, width='stretch')
 
     if st.checkbox("Show only first 5 rows"):
-        st.dataframe(df.head(), width='stretch')
+        st.dataframe(st.session_state.summary.head(), width='stretch')
