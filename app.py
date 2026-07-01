@@ -4,6 +4,7 @@ import streamlit as st
 from modules.loader import load_file
 from modules.cleaner import clean_data
 from modules.metrics import compute_metrics
+from modules.subject_analysis import analyse_subjects
 
 st.set_page_config(
     page_title="Student Analytics Dashboard",
@@ -22,6 +23,10 @@ if "summary" not in st.session_state:
     st.session_state.summary = None
 if "class_stats" not in st.session_state:
     st.session_state.class_stats = None
+if "subject_df" not in st.session_state:
+    st.session_state.subject_df = None
+if "subject_insights" not in st.session_state:
+    st.session_state.subject_insights = None
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("📊 Student Analytics Dashboard")
@@ -48,7 +53,11 @@ if uploaded_file is not None:
         df_clean, report = clean_data(df_raw)
         marks_cols = report["marks_columns"]
         summary, class_stats = compute_metrics(df_clean, marks_cols)
-
+        subject_df, subject_insights = analyse_subjects(df_clean, marks_cols)
+        
+        
+        st.session_state.subject_df = subject_df
+        st.session_state.subject_insights = subject_insights
         st.session_state.df_raw = df_raw
         st.session_state.df_clean = df_clean
         st.session_state.clean_report = report
@@ -104,3 +113,33 @@ if st.session_state.summary is not None:
 
     if st.checkbox("Show only first 5 rows"):
         st.dataframe(st.session_state.summary.head(), width='stretch')
+
+# ── Subject-wise Analysis ──────────────────────────────────────────────────────
+if st.session_state.subject_df is not None:
+    st.header("📚 Subject-wise Analysis")
+
+    insights = st.session_state.subject_insights
+
+    # Insight callouts
+    col1, col2 = st.columns(2)
+    col1.success(
+        f"🏆 Strongest Subject: **{insights['best_subject']}** "
+        f"({insights['best_avg']}% avg)"
+    )
+    col2.error(
+        f"⚠️ Weakest Subject: **{insights['worst_subject']}** "
+        f"({insights['worst_avg']}% avg)"
+    )
+
+    # Subjects needing attention
+    if insights["needs_attention"]:
+        st.warning(
+            f"🔴 Subjects where fewer than 50% of students passed: "
+            f"{', '.join(insights['needs_attention'])}"
+        )
+    else:
+        st.info("✅ All subjects have a pass rate above 50%.")
+
+    # Subject summary table
+    st.subheader("Subject Performance Breakdown")
+    st.dataframe(st.session_state.subject_df, width='stretch')
