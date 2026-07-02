@@ -5,6 +5,7 @@ from modules.loader import load_file
 from modules.cleaner import clean_data
 from modules.metrics import compute_metrics
 from modules.subject_analysis import analyse_subjects
+from modules.student_insights import get_toppers, get_at_risk_students
 
 st.set_page_config(
     page_title="Student Analytics Dashboard",
@@ -27,6 +28,10 @@ if "subject_df" not in st.session_state:
     st.session_state.subject_df = None
 if "subject_insights" not in st.session_state:
     st.session_state.subject_insights = None
+if "toppers" not in st.session_state:
+    st.session_state.toppers = None
+if "at_risk" not in st.session_state:
+    st.session_state.at_risk = None
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("📊 Student Analytics Dashboard")
@@ -34,6 +39,17 @@ st.markdown("Upload your student marks data to get instant performance insights.
 
 st.sidebar.title("Navigation")
 st.sidebar.markdown("**Step 1:** Upload your file below.")
+st.sidebar.markdown("---")
+st.sidebar.subheader("⚙️ Settings")
+
+n_toppers = st.sidebar.slider(
+    "Number of toppers to show", 
+    min_value=1, max_value=10, value=3
+)
+risk_threshold = st.sidebar.slider(
+    "At-risk threshold (%)", 
+    min_value=30, max_value=70, value=50
+)
 
 # ── File Upload ────────────────────────────────────────────────────────────────
 st.header("📂 Upload Data")
@@ -55,7 +71,11 @@ if uploaded_file is not None:
         summary, class_stats = compute_metrics(df_clean, marks_cols)
         subject_df, subject_insights = analyse_subjects(df_clean, marks_cols)
         
-        
+        toppers = get_toppers(summary, n=n_toppers)
+        at_risk = get_at_risk_students(summary, df_clean, marks_cols, threshold=risk_threshold)
+
+        st.session_state.toppers = toppers
+        st.session_state.at_risk = at_risk
         st.session_state.subject_df = subject_df
         st.session_state.subject_insights = subject_insights
         st.session_state.df_raw = df_raw
@@ -143,3 +163,36 @@ if st.session_state.subject_df is not None:
     # Subject summary table
     st.subheader("Subject Performance Breakdown")
     st.dataframe(st.session_state.subject_df, width='stretch')
+
+# ── Toppers ────────────────────────────────────────────────────────────────────
+if st.session_state.toppers is not None:
+    st.header("🏆 Top Performers")
+
+    toppers = st.session_state.toppers
+    cols = st.columns(len(toppers))
+
+    for i, (_, student) in enumerate(toppers.iterrows()):
+        medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"#{i+1}"
+        cols[i].metric(
+            label=f"{medal} {student.get('name', 'Student')}",
+            value=f"{student['percentage']}%",
+            delta=f"Grade {student['grade']}"
+        )
+
+    with st.expander("See full topper details"):
+        st.dataframe(toppers, width='stretch')
+
+# ── At-Risk Students ───────────────────────────────────────────────────────────
+if st.session_state.at_risk is not None:
+    st.header("⚠️ At-Risk Students")
+
+    at_risk = st.session_state.at_risk
+
+    if at_risk.empty:
+        st.success("✅ No at-risk students detected.")
+    else:
+        st.warning(
+            f"⚠️ {len(at_risk)} student(s) flagged as at-risk. "
+            f"Review and consider intervention."
+        )
+        st.dataframe(at_risk, width='stretch')
